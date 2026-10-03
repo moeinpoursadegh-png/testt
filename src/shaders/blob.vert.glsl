@@ -69,7 +69,7 @@ vec3 flexDeform(vec3 p){
   float n  = snoise(p * 1.15 + vec3(uSeed, uTime * 0.16, 0.0));
   float n2 = snoise(p * 2.4 - vec3(0.0, uTime * 0.3, uSeed));
   float w  = snoise(p * 1.6 + uTime * vec3(0.8, 1.2, 0.9) + uSeed);
-  vec3 base = p * (1.0 + uNoiseAmount * (n + 0.15 * n2) + uWobble * 0.04 * w);
+  vec3 base = p * (1.0 + uNoiseAmount * (n + 0.15 * n2) + uWobble * 0.025 * w);
 
   float y = base.y;
   float tail = 0.5 - 0.5 * clamp(y, -1.0, 1.0);          // 0 head … 1 tail

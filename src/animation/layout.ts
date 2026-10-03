@@ -1,29 +1,40 @@
-/** Shared world-space layout of the rig (y up, units ≈ metres of an imaginary lab bench). */
+/** Shared world-space layout (y up). The glass pipe follows PIPE_POINTS; the blob continues past its end. */
 export const BLOB_RADIUS = 0.55;
 
-export const SPAWN_Y = 6.6;
-export const FUNNEL_TOP_Y = 6.3;
-export const FUNNEL_NECK_Y = 4.6;
-export const RING1 = { x: -0.2, y: 3.8 } as const;
-export const RING2 = { x: 0.2, y: 3.0 } as const;
-export const BOTTLE_TOP_Y = 2.45;
-export const WAIST_Y = 1.4;
-export const WAIST_R = 0.5;
-export const BOTTLE_BOTTOM_Y = 0.7;
-export const BOTTLE_BOTTOM_R = 0.62;
-export const TUBE_R = 0.62;
-export const RECV_TOP_Y = -1.95;
+export const RECV_X = 0.3;
+export const RECV_TOP_Y = -0.9;
 export const RECV_R = 1.75;
-export const PED_TOP_Y = -3.1;
+export const PED_TOP_Y = -2.3;
 export const PED_R = 2.4;
 export const REST_Y = RECV_TOP_Y + 0.56;
 
-/** Inner glass radius of the narrow bottle (aperture) at height y. */
-export function bottleRadius(y: number): number {
-  if (y >= WAIST_Y) {
-    const k = (y - WAIST_Y) / (BOTTLE_TOP_Y - WAIST_Y);
-    return WAIST_R + 0.45 * k * k;
-  }
-  const k = (WAIST_Y - y) / (WAIST_Y - BOTTLE_BOTTOM_Y);
-  return WAIST_R + (BOTTLE_BOTTOM_R - WAIST_R) * k * k;
+/** Centre line of the blob path. Indices 1..9 are the glass pipe, 0 is a pad above the mouth, 10+ is the fall. */
+export const PATH_POINTS: [number, number][] = [
+  [-1.35, 7.7], // 0 above the mouth
+  [-1.35, 6.9], // 1 pipe mouth
+  [-1.35, 6.0], // 2
+  [-1.2, 5.1], // 3 first elbow
+  [-0.6, 4.55], // 4
+  [0.1, 4.2], // 5 crossing
+  [0.55, 3.6], // 6
+  [0.6, 2.7], // 7
+  [0.6, 1.9], // 8 narrow section
+  [0.55, 1.3], // 9 pipe end
+  [0.5, 0.6], // 10
+  [0.4, 0.1], // 11
+  [RECV_X, REST_Y], // 12 rest on the receiver
+];
+export const PIPE_FIRST = 1;
+export const PIPE_LAST = 9;
+export const PIPE_R = 0.62;
+export const PIPE_MIN_R = 0.5;
+/** pipe segment that shatters when the rigid ball hits it, as a fraction of the pipe length */
+export const BREAK_U = 0.34;
+
+/** Inner radius of the pipe at normalised length u (narrows toward the exit). */
+export function pipeRadius(u: number): number {
+  const k = Math.min(1, Math.max(0, (u - 0.7) / 0.22));
+  const taper = k * k * (3 - 2 * k);
+  const flare = Math.min(1, Math.max(0, (u - 0.93) / 0.07));
+  return PIPE_R - (PIPE_R - PIPE_MIN_R) * taper + 0.06 * flare;
 }

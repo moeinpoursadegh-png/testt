@@ -10,9 +10,9 @@ export class Background {
     this.mat = new THREE.ShaderMaterial({
       depthWrite: false,
       uniforms: {
-        uTop: { value: new THREE.Color(0x777b83) },
-        uMid: { value: new THREE.Color(0xdadde0) },
-        uBot: { value: new THREE.Color(0xb4b8bd) },
+        uTop: { value: new THREE.Color(0x8a93a9) },
+        uMid: { value: new THREE.Color(0xb9bfd0) },
+        uBot: { value: new THREE.Color(0x959baf) },
         uTime: { value: 0 },
       },
       vertexShader: /* glsl */ `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
@@ -31,7 +31,10 @@ export class Background {
           c = mix(c, uTop, smoothstep(0.55, 1.0, y));
           // large soft pool of light behind the rig
           float d = length((vUv - vec2(0.5, 0.52)) * vec2(1.0, 0.8));
-          c += (1.0 - smoothstep(0.0, 0.65, d)) * 0.07;
+          c += (1.0 - smoothstep(0.0, 0.65, d)) * 0.06;
+          // soft diagonal light streaks, like light through a window
+          float st = sin((vUv.x * 1.0 + vUv.y * 0.55) * 9.0 + uTime * 0.05) * 0.5 + 0.5;
+          c += pow(st, 6.0) * 0.022 * smoothstep(0.2, 0.9, vUv.y);
           // faint drifting haze
           float n = vnoise(vUv * 2.2 + vec2(uTime * 0.01, 0.0)) * 0.6 + vnoise(vUv * 5.0 - vec2(0.0, uTime * 0.014)) * 0.4;
           c += (n - 0.5) * 0.028;

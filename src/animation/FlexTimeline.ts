@@ -1,14 +1,7 @@
 import * as THREE from 'three';
 import { Pchip, clamp, gauss, lerp, smoothstep } from '../utils/math';
 import { dampedCos, dampedSin, easeInCubic, easeInOutCubic, easeOutCubic } from './easing';
-import {
-  BLOB_RADIUS as R,
-  RECV_TOP_Y,
-  SPAWN_Y,
-  WAIST_Y,
-  BOTTLE_BOTTOM_Y,
-  bottleRadius,
-} from './layout';
+import { BLOB_RADIUS as R, RECV_TOP_Y } from './layout';
 import { MotionPath } from './motionPath';
 import { FLEX_LEVELS, PROFILES, type FlexLevel, type FlexProfile } from './profiles';
 
@@ -26,7 +19,7 @@ export class BlobPose {
   wobble = 0;
   bend = 0;
   flatY = 99;
-  noise = 0.03;
+  noise = 0.012;
   velocity = 0;
   stress = 0;
   readonly lag = new THREE.Vector3();
@@ -45,6 +38,10 @@ export class BlobPose {
   height = 0;
   /** 0 or 1: blob is touching the receiver */
   contact = 0;
+  /** seconds since the glass shattered, or -1 */
+  shardT = -1;
+  /** 0..1 how much of the shatterable pipe section exists */
+  grow = 1;
 }
 
 interface Keys {
@@ -56,7 +53,7 @@ interface Keys {
   duration: number;
   /** rigid state */
   tContact: number;
-  yContact: number;
+  sBreak: number;
 }
 
 const LAG_ROT = 0.1;
@@ -77,10 +74,7 @@ const qTmp = new THREE.Quaternion();
 export class FlexTimeline {
   readonly path = new MotionPath();
   private readonly keys = new Map<FlexLevel, Keys>();
-  private readonly yContact: number;
-
   constructor() {
-    this.yContact = this.findRigidContact();
     for (const l of FLEX_LEVELS) this.keys.set(l, this.buildKeys(PROFILES[l]));
   }
 
@@ -93,47 +87,29 @@ export class FlexTimeline {
     return this.keys.get(level)!.tHold;
   }
 
-  private findRigidContact(): number {
-    for (let yc = 3.5; yc > 0.8; yc -= 0.005) {
-      let dmin = Infinity;
-      for (let y = BOTTLE_BOTTOM_Y; y <= 2.45; y += 0.01) {
-        dmin = Math.min(dmin, Math.hypot(bottleRadius(y), y - yc));
-      }
-      if (dmin <= R) return yc;
-    }
-    return WAIST_Y;
-  }
-
   private buildKeys(p: FlexProfile): Keys {
     const P = this.path;
+    const m = (i: number) => P.marker(i);
     const d = p.apertureDelay;
-    const sy = (y: number) => P.sForY(y);
     if (p.level === 0) {
-      const yc = this.yContact;
-      const tContact = 2.35;
-      const t = [0, 0.85, 1.2, 1.5, 1.8, 2.1, tContact];
-      const s = [sy(SPAWN_Y), sy(5.7), sy(4.7), sy(3.8), sy(3.0), sy(2.45), sy(yc)];
+      const tb = 1.3;
+      const sB = m(2.75);
+      const t = [0, 0.6, 1.0, tb];
+      const s = [m(0), m(1), m(2), sB];
       return {
-        s: new Pchip(t, s), tAp: tContact, tExit: 99, tLand: 99,
-        tHold: tContact + 1.25, duration: p.duration, tContact, yContact: yc,
+        s: new Pchip(t, s), tAp: tb, tExit: 99, tLand: 99, tHold: 3.9, duration: p.duration,
+        tContact: tb, sBreak: sB,
       };
     }
-    const tAp = 2.5 + d;
-    const tExit = 2.95 + d;
-    const tLand = 3.6 + d;
-    const tApproach = 2.1 + 0.3 * d;
-    const t = [
-      0, 0.85, 1.2, 1.5, 1.8, tApproach,
-      tApproach + (tAp - tApproach) * 0.62, tAp, tExit, 3.3 + d, tLand,
-    ];
-    const s = [
-      sy(SPAWN_Y), sy(5.7), sy(4.7), sy(3.8), sy(3.0), sy(2.2),
-      sy(1.8), sy(WAIST_Y), sy(0.7), sy(-0.2), 1,
-    ];
-    const duration = p.duration;
+    const tApproach = 2.95 + 0.3 * d;
+    const tAp = 3.3 + d;
+    const tExit = 3.65 + d;
+    const tLand = 4.3 + d;
+    const t = [0, 0.6, 1.0, 1.4, 1.8, 2.2, 2.6, tApproach, tApproach + (tAp - tApproach) * 0.62, tAp, tExit, 3.95 + d, tLand];
+    const s = [m(0), m(1), m(2), m(3), m(4), m(5), m(6), m(7), m(7.62), m(8), m(9), m(10), 1];
     return {
-      s: new Pchip(t, s), tAp, tExit, tLand, tHold: duration - ABSORB - 0.01,
-      duration, tContact: 99, yContact: 0,
+      s: new Pchip(t, s), tAp, tExit, tLand, tHold: p.duration - ABSORB - 0.01, duration: p.duration,
+      tContact: 99, sBreak: 0,
     };
   }
 
@@ -148,9 +124,9 @@ export class FlexTimeline {
 
   private resetPose(o: BlobPose): void {
     o.stretch = 1; o.squash = 1; o.skew = 0; o.neck = 0; o.neckPos = 0.15; o.wobble = 0;
-    o.bend = 0; o.flatY = 99; o.noise = 0.03; o.velocity = 0; o.stress = 0; o.lag.set(0, 0, 0);
+    o.bend = 0; o.flatY = 99; o.noise = 0.012; o.velocity = 0; o.stress = 0; o.lag.set(0, 0, 0);
     o.receiverY = 0; o.rigShakeX = 0; o.rigShakeY = 0; o.crack = 0; o.flash = 0; o.push = 0;
-    o.height = 1; o.contact = 0;
+    o.height = 1; o.contact = 0; o.shardT = -1; o.grow = 1;
   }
 
   private frame(dir: THREE.Vector3, out: THREE.Quaternion): void {
@@ -163,60 +139,39 @@ export class FlexTimeline {
 
   private evalRigid(prof: FlexProfile, K: Keys, t: number, o: BlobPose): void {
     const P = this.path;
-    const sNow = K.s.eval(t);
-    P.pointAt(sNow, v0);
-    const speedC = K.s.deriv(K.tContact - 0.001) * P.length;
     const tau = t - K.tContact;
-    let x = 0;
-    let rollZ = 0;
-    let y = v0.y;
-    let squashHit = 0;
-    if (tau > 0) {
-      y = K.yContact;
-      const T1 = 0.5;
-      const T2 = 0.3;
-      const h1 = clamp(speedC * 0.1, 0.18, 0.4);
-      if (tau < T1) {
-        const u = tau / T1;
-        y += 4 * h1 * u * (1 - u);
-      } else if (tau < T1 + T2) {
-        const u = (tau - T1) / T2;
-        y += 4 * h1 * 0.22 * u * (1 - u);
-      }
-      x = 0.1 * smoothstep(0, 1.0, tau) * (1 + 0.15 * Math.sin(tau * 9) * Math.exp(-tau * 2));
-      rollZ = -0.5 * smoothstep(0, 1.1, tau);
-      squashHit = Math.exp(-tau * 16);
+    const sc0 = easeOutCubic(clamp((t - 0.05) / 0.4));
+    let sc = sc0;
+    if (tau <= 0) {
+      P.pointAt(K.s.eval(t), v0);
+      o.position.copy(v0);
+      P.tangentAt(K.s.eval(t - LAG_ROT), v1);
+      this.frame(v1, o.quaternion);
+      o.velocity = clamp((K.s.deriv(t) * P.length) / 3.2, 0, 1);
+    } else {
+      // the ball punches through the glass, is knocked sideways and tumbles out of frame
+      P.pointAt(K.sBreak, v0);
+      const hit = Math.exp(-tau * 14);
+      const x = v0.x - 1.9 * tau + 0.0 * hit;
+      const y = v0.y - 0.6 * tau - 0.5 * 9.5 * tau * tau;
+      o.position.set(x, y, 0);
+      vDown.set(0, -1, 0);
+      this.frame(vDown, o.quaternion);
+      qTmp.setFromAxisAngle(vUp, -tau * 3.2);
+      o.quaternion.premultiply(qTmp);
+      const a = 1 - 0.12 * hit;
+      o.stretch = a;
+      o.squash = 1 / Math.sqrt(a);
+      o.wobble = prof.wobble * 0.3 * hit;
+      if (y < -7) sc = 0;
+      o.shardT = tau;
     }
-    // retract into the dispenser: the reset beat
-    const tR = K.tHold;
-    const ur = clamp((t - tR) / 1.05);
-    let sc = easeOutCubic(clamp((t - 0.05) / 0.4));
-    if (ur > 0) {
-      y = lerp(y, SPAWN_Y, easeInOutCubic(ur));
-      x *= 1 - ur;
-      sc *= 1 - smoothstep(0.55, 1, ur);
-    }
-    o.position.set(x, y, 0);
-    const lagS = K.s.eval(t - LAG_ROT);
-    P.tangentAt(lagS, v1);
-    this.frame(tau > 0 ? vDown : v1, o.quaternion);
-    qTmp.setFromAxisAngle(vUp, rollZ);
-    o.quaternion.premultiply(qTmp);
     o.scale = R * sc;
-    const a = 1 - 0.08 * squashHit;
-    o.stretch = a;
-    o.squash = 1 / Math.sqrt(a);
-    o.wobble = prof.wobble * 0.25 * squashHit;
-    o.velocity = clamp(K.s.deriv(t) * P.length / 3.2, 0, 1) * (tau > 0 ? 0 : 1);
     o.stress = 0;
-    // stress response
-    const crackIn = smoothstep(0, 0.12, tau);
-    const crackOut = 1 - smoothstep(tR - 0.1, tR + 0.9, t);
-    o.crack = tau > 0 ? crackIn * crackOut : 0;
-    o.flash = tau > 0 ? Math.exp(-tau * 5) : 0;
-    const sh = tau > 0 ? Math.exp(-tau * 9) : 0;
-    o.rigShakeX = 0.035 * sh * Math.sin(tau * 78);
-    o.rigShakeY = 0.012 * sh * Math.sin(tau * 61 + 1.3);
+    o.flash = tau > 0 ? Math.exp(-tau * 4.5) : 0;
+    // the broken pipe section regrows from the mouth during the reset beat
+    if (tau <= 0) o.grow = 1;
+    else o.grow = clamp((t - K.tHold) / 1.1) > 0 ? easeInOutCubic(clamp((t - K.tHold) / 1.1)) : 0;
     o.height = 1;
   }
 
@@ -240,7 +195,7 @@ export class FlexTimeline {
       sink = prof.restSink * smoothstep(0, 1.6 / prof.recovery, tauL);
     }
     const sc0 = easeOutCubic(clamp((t - 0.05) / 0.4));
-    const floor = RECV_TOP_Y + 0; // receiver bob applied below
+    const floor = RECV_TOP_Y;
     let y = v0.y - spring - sink;
     const x = v0.x;
 
@@ -251,8 +206,7 @@ export class FlexTimeline {
     this.frame(v1, o.quaternion);
 
     // deformation driver heights (delayed so squeeze trails the position)
-    P.pointAt(K.s.eval(t - LAG_DEF), v1);
-    const g = gauss(v1.y, WAIST_Y + 0.05, 0.85);
+    const g = gauss(K.s.eval(t - LAG_DEF), P.marker(8.45), P.marker(9) - P.marker(8) + 0.01);
     const speedN = clamp(speed / 3.2);
     const flying = 1 - smoothstep(K.tLand - 0.08, K.tLand + 0.15, t);
     const aVel = 1 + prof.stretch * 0.6 * speedN * flying;
@@ -289,7 +243,7 @@ export class FlexTimeline {
     // local X axis of the frame is column 0 of the quaternion rotation
     vX.set(1, 0, 0).applyQuaternion(o.quaternion);
     const kappa = vT.dot(vX);
-    o.bend = clamp(0.5 * kappa * R * prof.bend, -0.1, 0.1);
+    o.bend = clamp(0.5 * kappa * R * prof.bend, -0.16, 0.16);
 
     // tail lag: how far the lagged position trails the current one, in the local frame
     P.pointAt(K.s.eval(t - 0.18), v1);
@@ -303,7 +257,7 @@ export class FlexTimeline {
     const envE = Math.exp(-Math.max(0, tauE) * 1.8 * prof.recovery) * smoothstep(K.tAp - 0.3, K.tAp + 0.2, t);
     const envL = tauL > 0 ? Math.exp(-tauL * 1.1 * prof.recovery) : 0;
     o.wobble = prof.wobble * (0.5 * envE + 0.9 * envL) * 0.5;
-    o.noise = 0.03 + 0.01 * prof.wobble * (envE + envL);
+    o.noise = 0.012 + 0.006 * prof.wobble * (envE + envL);
 
     // floor contact: the plane cuts the lowest part, giving squash + spread
     const bob = tauL > 0 ? 0.012 * prof.impact * dampedSin(tauL, 7, 4.5) : 0;

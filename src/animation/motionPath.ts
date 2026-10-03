@@ -1,50 +1,42 @@
 import * as THREE from 'three';
-import { REST_Y } from './layout';
+import { PATH_POINTS } from './layout';
 
-const N = 600;
+const N = 1200;
 
 export class MotionPath {
   readonly curve: THREE.CatmullRomCurve3;
   readonly length: number;
-  private readonly ys = new Float32Array(N + 1);
+  private readonly samples: THREE.Vector3[] = [];
+  private readonly markers: number[] = [];
 
   constructor() {
     this.curve = new THREE.CatmullRomCurve3(
-      [
-        new THREE.Vector3(0, 7.0, 0),
-        new THREE.Vector3(0, 6.6, 0),
-        new THREE.Vector3(0, 5.7, 0),
-        new THREE.Vector3(0, 4.7, 0),
-        new THREE.Vector3(-0.2, 3.8, 0),
-        new THREE.Vector3(0.2, 3.0, 0),
-        new THREE.Vector3(0, 2.2, 0),
-        new THREE.Vector3(0, 1.4, 0),
-        new THREE.Vector3(0, 0.7, 0),
-        new THREE.Vector3(0.04, 0.25, 0),
-        new THREE.Vector3(0.18, -0.2, 0),
-        new THREE.Vector3(0.4, -0.6, 0),
-        new THREE.Vector3(0.46, -1.0, 0),
-        new THREE.Vector3(0.4, REST_Y, 0),
-      ],
+      PATH_POINTS.map(([x, y]) => new THREE.Vector3(x, y, 0)),
       false,
       'centripetal',
     );
     this.length = this.curve.getLength();
-    const v = new THREE.Vector3();
-    for (let i = 0; i <= N; i++) this.ys[i] = this.curve.getPointAt(i / N, v).y;
+    for (let i = 0; i <= N; i++) this.samples.push(this.curve.getPointAt(i / N));
+    for (const [x, y] of PATH_POINTS) {
+      let best = 0;
+      let bd = Infinity;
+      this.samples.forEach((p, i) => {
+        const d = (p.x - x) ** 2 + (p.y - y) ** 2;
+        if (d < bd) {
+          bd = d;
+          best = i;
+        }
+      });
+      this.markers.push(best / N);
+    }
   }
 
-  /** Arc-length fraction where the path first reaches height y (path descends monotonically). */
-  sForY(y: number): number {
-    const ys = this.ys;
-    if (y >= ys[0]) return 0;
-    for (let i = 1; i <= N; i++) {
-      if (ys[i] <= y) {
-        const f = (ys[i - 1] - y) / (ys[i - 1] - ys[i] || 1);
-        return (i - 1 + f) / N;
-      }
-    }
-    return 1;
+  /** arc-length fraction at control point i (fractional i interpolates between neighbours) */
+  marker(i: number): number {
+    const a = Math.floor(i);
+    const f = i - a;
+    if (f === 0) return this.markers[a];
+    return this.markers[a] + (this.markers[a + 1] - this.markers[a]) * f;
   }
 
   pointAt(s: number, out: THREE.Vector3): THREE.Vector3 {

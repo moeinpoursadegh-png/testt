@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { BlobPose } from '../animation/FlexTimeline';
+import { RECV_X } from '../animation/layout';
 import type { FlexLevel } from '../animation/profiles';
 import { FlexBlob } from '../objects/FlexBlob';
 import { GlassRig } from '../objects/GlassRig';
@@ -40,6 +41,7 @@ export class SceneManager {
 
     this.cameraCtl.camera.add(this.background.mesh);
     this.scene.add(this.cameraCtl.camera);
+    this.pedestal.group.position.x = this.receiver.group.position.x = RECV_X;
     this.world.add(this.pedestal.group, this.receiver.group, this.blob.mesh, this.rig.group);
     this.scene.add(this.world);
 
@@ -62,14 +64,12 @@ export class SceneManager {
 
   render(pose: BlobPose, time: number): void {
     this.blob.apply(pose, time);
-    this.rig.group.position.set(pose.rigShakeX, pose.rigShakeY, 0);
-    this.rig.setCrack(pose.crack);
-    this.rig.setFlash(pose.flash);
+    this.rig.update(pose);
     this.receiver.setBob(pose.receiverY);
     // soft contact shadow follows the blob and tightens as it nears the plate
     const near = 1 - pose.height;
     const width = pose.scale * Math.max(pose.squash, 0.7) * (1 + 0.6 * Math.max(0, 1 - pose.flatY / Math.max(pose.stretch, 0.5)));
-    this.receiver.setBlobShadow(pose.position.x, Math.max(width, 0.001), 0.08 + 0.5 * near * near * Math.min(1, pose.scale / 0.5));
+    this.receiver.setBlobShadow(pose.position.x - RECV_X, Math.max(width, 0.001), 0.08 + 0.5 * near * near * Math.min(1, pose.scale / 0.5));
     this.cameraCtl.update(time, pose.push);
     this.background.fit(this.cameraCtl.camera.fov, this.cameraCtl.camera.aspect);
     this.background.update(time);

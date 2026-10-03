@@ -1,217 +1,212 @@
 import * as THREE from 'three';
-import {
-  BOTTLE_BOTTOM_R,
-  BOTTLE_BOTTOM_Y,
-  BOTTLE_TOP_Y,
-  FUNNEL_NECK_Y,
-  FUNNEL_TOP_Y,
-  RING1,
-  RING2,
-  SPAWN_Y,
-  TUBE_R,
-  WAIST_R,
-  WAIST_Y,
-  bottleRadius,
-} from '../animation/layout';
+import { BREAK_U, PATH_POINTS, PIPE_FIRST, PIPE_LAST, pipeRadius } from '../animation/layout';
+import type { BlobPose } from '../animation/FlexTimeline';
 import { createBrushedRoughness } from '../utils/proceduralTextures';
 
-const FUNNEL_R_TOP = 1.85;
-const FUNNEL_R_NECK = 0.92;
+const SHARDS = 240;
+const SEGS = 220;
+const RADIAL = 64;
+const GRAVITY = 9.5;
 
-function funnelRadius(y: number): number {
-  const k = (y - FUNNEL_NECK_Y) / (FUNNEL_TOP_Y - FUNNEL_NECK_Y);
-  // bell flare: tight near the neck, opening quickly toward the lip
-  return FUNNEL_R_NECK + (FUNNEL_R_TOP - FUNNEL_R_NECK) * Math.pow(k, 2.2);
-}
-
+/** Glass S-pipe. The upper section shatters into instanced shards when the rigid ball hits it. */
 export class GlassRig {
   readonly group = new THREE.Group();
-  readonly glass: THREE.MeshPhysicalMaterial;
+  private readonly glassA: THREE.MeshPhysicalMaterial;
+  private readonly glassB: THREE.MeshPhysicalMaterial;
+  private readonly growA = { value: 1 };
+  private readonly growB = { value: 1 };
   private readonly metal: THREE.MeshStandardMaterial;
-  private readonly crackMat: THREE.LineBasicMaterial;
   private readonly brushed = createBrushedRoughness();
+  private readonly curve: THREE.CatmullRomCurve3;
+  private readonly frames: ReturnType<THREE.CatmullRomCurve3['computeFrenetFrames']>;
+  private readonly shards: THREE.InstancedMesh;
+  private readonly shardMat: THREE.MeshPhysicalMaterial;
+  private readonly shardData: { p: THREE.Vector3; v: THREE.Vector3; axis: THREE.Vector3; spin: number; s: THREE.Vector3; delay: number }[] = [];
+  private readonly m4 = new THREE.Matrix4();
+  private readonly q = new THREE.Quaternion();
+  private readonly pos = new THREE.Vector3();
 
   constructor() {
-    this.glass = new THREE.MeshPhysicalMaterial({
-      color: 0xffffff,
-      metalness: 0,
-      roughness: 0.03,
-      transmission: 1,
-      thickness: 0.28,
-      ior: 1.5,
-      attenuationColor: new THREE.Color(0xd3e8e2),
-      attenuationDistance: 2.2,
-      specularIntensity: 1,
-      envMapIntensity: 1.0,
-      side: THREE.DoubleSide,
-      clearcoat: 0.6,
-      clearcoatRoughness: 0.04,
-    });
+    const mk = (grow: { value: number }, key: string) => {
+      const m = new THREE.MeshPhysicalMaterial({
+        color: 0xffffff,
+        roughness: 0.025,
+        transmission: 1,
+        thickness: 0.3,
+        ior: 1.5,
+        attenuationColor: new THREE.Color(0xd9eaee),
+        attenuationDistance: 2.0,
+        envMapIntensity: 1.1,
+        side: THREE.DoubleSide,
+        clearcoat: 0.6,
+        clearcoatRoughness: 0.04,
+      });
+      m.onBeforeCompile = (sh) => {
+        sh.uniforms.uGrow = grow;
+        sh.vertexShader = sh.vertexShader
+          .replace('#include <common>', '#include <common>\nattribute float aU;\nvarying float vU;')
+          .replace('#include <begin_vertex>', '#include <begin_vertex>\nvU = aU;');
+        sh.fragmentShader = sh.fragmentShader
+          .replace('#include <common>', '#include <common>\nvarying float vU;\nuniform float uGrow;')
+          .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\nif (vU > uGrow) discard;');
+      };
+      m.customProgramCacheKey = () => key;
+      return m;
+    };
+    this.glassA = mk(this.growA, 'pipe-a');
+    this.glassB = mk(this.growB, 'pipe-b');
     this.metal = new THREE.MeshStandardMaterial({
-      color: 0xc9ccd1,
-      metalness: 1,
-      roughness: 0.32,
-      roughnessMap: this.brushed,
-      envMapIntensity: 1.1,
-    });
-    this.crackMat = new THREE.LineBasicMaterial({
-      color: 0xffffff,
-      transparent: true,
-      opacity: 0,
-      depthWrite: false,
+      color: 0xc9ccd1, metalness: 1, roughness: 0.32, roughnessMap: this.brushed, envMapIntensity: 1.1,
     });
 
-    this.buildFunnel();
-    this.buildRings();
-    this.buildBottle();
-    this.buildExitGuide();
-    this.buildDispenser();
-    this.group.add(this.buildCracks());
-  }
+    this.curve = new THREE.CatmullRomCurve3(
+      PATH_POINTS.slice(PIPE_FIRST, PIPE_LAST + 1).map(([x, y]) => new THREE.Vector3(x, y, 0)),
+      false,
+      'centripetal',
+    );
+    this.frames = this.curve.computeFrenetFrames(SEGS, false);
 
-  private latheOf(fn: (y: number) => number, y0: number, y1: number, steps: number, segs = 72): THREE.Mesh {
-    const pts: THREE.Vector2[] = [];
-    for (let i = 0; i <= steps; i++) {
-      const y = y0 + ((y1 - y0) * i) / steps;
-      pts.push(new THREE.Vector2(fn(y), y));
-    }
-    return new THREE.Mesh(new THREE.LatheGeometry(pts, segs), this.glass);
-  }
+    // upper section (shatters) is grown from u=0 → BREAK_U, lower section is permanent
+    const a = new THREE.Mesh(this.buildPipe(0, BREAK_U), this.glassA);
+    const b = new THREE.Mesh(this.buildPipe(BREAK_U, 1), this.glassB);
+    a.frustumCulled = b.frustumCulled = false;
+    this.group.add(a, b);
+    for (const u of [0.002, BREAK_U, 0.997]) this.addRim(u);
+    this.group.add(this.addDarkTip());
 
-  private torus(R: number, r: number, mat: THREE.Material, rad = 20, tub = 96): THREE.Mesh {
-    const m = new THREE.Mesh(new THREE.TorusGeometry(R, r, rad, tub), mat);
-    m.rotation.x = Math.PI / 2;
-    return m;
-  }
-
-  private buildFunnel(): void {
-    this.group.add(this.latheOf(funnelRadius, FUNNEL_NECK_Y, FUNNEL_TOP_Y, 40));
-    const lip = this.torus(FUNNEL_R_TOP, 0.05, this.glass);
-    lip.position.y = FUNNEL_TOP_Y;
-    const collar = this.torus(FUNNEL_R_NECK + 0.02, 0.035, this.metal);
-    collar.position.y = FUNNEL_NECK_Y;
-    const lipMetal = this.torus(FUNNEL_R_TOP + 0.045, 0.014, this.metal);
-    lipMetal.position.y = FUNNEL_TOP_Y - 0.02;
-    this.group.add(lip, collar, lipMetal);
-  }
-
-  private buildRings(): void {
-    for (const [pos, tilt] of [
-      [RING1, -0.1],
-      [RING2, 0.1],
-    ] as const) {
-      const g = new THREE.Group();
-      g.position.set(pos.x, pos.y, 0);
-      g.rotation.z = tilt;
-      g.add(this.torus(0.98, 0.1, this.glass, 28, 96));
-      const band = this.torus(0.98, 0.022, this.metal, 14, 96);
-      band.scale.set(1.0, 1.0, 1.0);
-      band.position.y = 0.0;
-      const outer = this.torus(1.09, 0.014, this.metal, 12, 96);
-      g.add(band, outer);
-      this.group.add(g);
+    // shards
+    this.shardMat = new THREE.MeshPhysicalMaterial({
+      color: 0xf2f8fa, roughness: 0.04, metalness: 0, transparent: true, opacity: 0.32,
+      envMapIntensity: 1.8, side: THREE.DoubleSide, depthWrite: false, clearcoat: 1,
+    });
+    const g = new THREE.TetrahedronGeometry(1, 0);
+    this.shards = new THREE.InstancedMesh(g, this.shardMat, SHARDS);
+    this.shards.frustumCulled = false;
+    this.shards.count = 0;
+    this.shards.renderOrder = 4;
+    this.group.add(this.shards);
+    let seed = 41;
+    const rnd = () => {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      return seed / 4294967296;
+    };
+    const n = new THREE.Vector3();
+    const T = new THREE.Vector3();
+    for (let i = 0; i < SHARDS; i++) {
+      const u = 0.01 + rnd() * (BREAK_U - 0.02);
+      const th = rnd() * Math.PI * 2;
+      this.surface(u, th, this.pos, n, T);
+      const big = rnd() < 0.18;
+      const sz = big ? 0.14 + rnd() * 0.12 : 0.04 + rnd() * 0.08;
+      const near = Math.exp(-(((u - 0.2) / 0.1) ** 2)); // fragments near the impact fly faster
+      this.shardData.push({
+        p: this.pos.clone(),
+        v: new THREE.Vector3(-1.2 - rnd() * 1.0 * near, 0.4 + rnd() * 1.4, 0)
+          .addScaledVector(n, 1.0 + rnd() * 2.8 * (0.5 + near))
+          .addScaledVector(T, (rnd() - 0.5) * 1.5),
+        axis: new THREE.Vector3(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize(),
+        spin: (rnd() - 0.5) * 14,
+        s: new THREE.Vector3(sz, sz * (0.6 + rnd() * 0.8), sz * 0.12),
+        delay: rnd() * 0.08 * (1 - near),
+      });
     }
   }
 
-  private buildBottle(): void {
-    const bottle = this.latheOf(bottleRadius, BOTTLE_BOTTOM_Y, BOTTLE_TOP_Y, 64);
-    this.group.add(bottle);
-    const top = this.torus(bottleRadius(BOTTLE_TOP_Y) + 0.02, 0.035, this.metal);
-    top.position.y = BOTTLE_TOP_Y;
-    const waist = this.torus(WAIST_R + 0.045, 0.05, this.metal, 24, 96);
-    waist.position.y = WAIST_Y;
-    const waist2 = this.torus(WAIST_R + 0.04, 0.02, this.metal, 12, 96);
-    waist2.position.y = WAIST_Y + 0.14;
-    const bot = this.torus(BOTTLE_BOTTOM_R + 0.02, 0.03, this.metal);
-    bot.position.y = BOTTLE_BOTTOM_Y;
-    this.group.add(top, waist, waist2, bot);
+  private surface(u: number, th: number, p: THREE.Vector3, n: THREE.Vector3, T: THREE.Vector3): void {
+    const k = Math.min(SEGS, Math.round(u * SEGS));
+    const c = this.curve.getPointAt(u);
+    const N = this.frames.normals[k];
+    const B = this.frames.binormals[k];
+    n.copy(N).multiplyScalar(Math.cos(th)).addScaledVector(B, Math.sin(th));
+    p.copy(c).addScaledVector(n, pipeRadius(u));
+    T.copy(this.frames.tangents[k]);
   }
 
-  readonly exitCurve = new THREE.CatmullRomCurve3(
-    [
-      new THREE.Vector3(0, BOTTLE_BOTTOM_Y, 0),
-      new THREE.Vector3(0, 0.3, 0),
-      new THREE.Vector3(0.12, -0.12, 0),
-      new THREE.Vector3(0.36, -0.55, 0),
-    ],
-    false,
-    'centripetal',
-  );
+  private buildPipe(u0: number, u1: number): THREE.BufferGeometry {
+    const rows = Math.max(2, Math.round(SEGS * (u1 - u0)));
+    const pos: number[] = [];
+    const nor: number[] = [];
+    const au: number[] = [];
+    const idx: number[] = [];
+    const p = new THREE.Vector3();
+    const n = new THREE.Vector3();
+    const T = new THREE.Vector3();
+    for (let i = 0; i <= rows; i++) {
+      const u = u0 + ((u1 - u0) * i) / rows;
+      for (let j = 0; j <= RADIAL; j++) {
+        this.surface(u, (j / RADIAL) * Math.PI * 2, p, n, T);
+        pos.push(p.x, p.y, p.z);
+        nor.push(n.x, n.y, n.z);
+        au.push(u);
+      }
+    }
+    for (let i = 0; i < rows; i++) {
+      for (let j = 0; j < RADIAL; j++) {
+        const a = i * (RADIAL + 1) + j;
+        const b = a + RADIAL + 1;
+        idx.push(a, a + 1, b, b, a + 1, b + 1);
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+    g.setAttribute('aU', new THREE.Float32BufferAttribute(au, 1));
+    g.setIndex(idx);
+    return g;
+  }
 
-  private buildExitGuide(): void {
-    const geo = new THREE.TubeGeometry(this.exitCurve, 48, TUBE_R, 56, false);
-    this.group.add(new THREE.Mesh(geo, this.glass));
-    const end = this.exitCurve.getPoint(1);
-    const tan = this.exitCurve.getTangent(1);
-    const rim = this.torus(TUBE_R + 0.01, 0.034, this.metal);
-    rim.position.copy(end);
-    rim.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), tan);
-    rim.rotateX(Math.PI / 2);
+  private addRim(u: number): void {
+    const c = this.curve.getPointAt(u);
+    const tan = this.curve.getTangentAt(u);
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(pipeRadius(u) + 0.015, 0.03, 16, 96), this.metal);
+    rim.position.copy(c);
+    rim.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), tan);
     this.group.add(rim);
   }
 
-  private buildDispenser(): void {
-    const dark = new THREE.MeshStandardMaterial({ color: 0x2a2c30, metalness: 0.9, roughness: 0.35 });
-    const ring = this.torus(0.46, 0.05, dark);
-    ring.position.y = SPAWN_Y + 0.25;
-    const inner = this.torus(0.34, 0.022, this.metal);
-    inner.position.y = SPAWN_Y + 0.25;
-    this.group.add(ring, inner);
+  private addDarkTip(): THREE.Mesh {
+    const c = this.curve.getPointAt(1);
+    const tan = this.curve.getTangentAt(1);
+    const m = new THREE.Mesh(
+      new THREE.TorusGeometry(pipeRadius(1) + 0.03, 0.05, 16, 96),
+      new THREE.MeshStandardMaterial({ color: 0x1c1d20, metalness: 0.8, roughness: 0.4 }),
+    );
+    m.position.copy(c).addScaledVector(tan, -0.02);
+    m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), tan);
+    return m;
   }
 
-  private buildCracks(): THREE.LineSegments {
-    // a few hairline fractures running over the glass around the aperture, on the camera-facing side
-    const pts: number[] = [];
-    let seed = 7;
-    const rnd = () => {
-      seed = (Math.imul(seed, 1103515245) + 12345) >>> 0;
-      return seed / 4294967296;
-    };
-    const starts: [number, number, number][] = [
-      [WAIST_Y + 0.08, Math.PI / 2 - 0.25, 1],
-      [WAIST_Y + 0.02, Math.PI / 2 + 0.2, -1],
-      [WAIST_Y + 0.15, Math.PI / 2 + 0.05, 1],
-    ];
-    for (const [y0, th0, dir] of starts) {
-      let y = y0;
-      let th = th0;
-      for (let i = 0; i < 6; i++) {
-        const ny = y + dir * (0.07 + rnd() * 0.07);
-        const nth = th + (rnd() - 0.45) * 0.32;
-        for (const [yy, tt] of [
-          [y, th],
-          [ny, nth],
-        ]) {
-          const r = bottleRadius(yy) + 0.018;
-          pts.push(r * Math.cos(tt), yy, r * Math.sin(tt));
-        }
-        y = ny;
-        th = nth;
-      }
+  update(pose: BlobPose): void {
+    this.growA.value = pose.grow;
+    this.glassA.envMapIntensity = this.glassB.envMapIntensity = 1.1 + 0.8 * pose.flash;
+    const tau = pose.shardT;
+    if (tau < 0 || pose.grow >= 0.999) {
+      this.shards.count = 0;
+      return;
     }
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
-    const lines = new THREE.LineSegments(geo, this.crackMat);
-    lines.renderOrder = 5;
-    return lines;
+    this.shards.count = SHARDS;
+    for (let i = 0; i < SHARDS; i++) {
+      const d = this.shardData[i];
+      const t = Math.max(0, tau - d.delay);
+      this.pos.copy(d.p).addScaledVector(d.v, t);
+      this.pos.y -= 0.5 * GRAVITY * t * t;
+      this.q.setFromAxisAngle(d.axis, d.spin * t);
+      const vis = t > 0 && this.pos.y > -9 ? 1 : 0.0001;
+      this.m4.compose(t > 0 ? this.pos : d.p, this.q, vis === 1 ? d.s : this.tiny);
+      this.shards.setMatrixAt(i, this.m4);
+    }
+    this.shards.instanceMatrix.needsUpdate = true;
   }
 
-  setCrack(v: number): void {
-    this.crackMat.opacity = v * 0.9;
-  }
-
-  setFlash(v: number): void {
-    this.glass.envMapIntensity = 1 + 0.9 * v;
-    this.glass.specularIntensity = 1 + 0.5 * v;
-  }
+  private readonly tiny = new THREE.Vector3(0.0001, 0.0001, 0.0001);
 
   dispose(): void {
     this.brushed.dispose();
-    this.group.traverse((o) => {
-      (o as THREE.Mesh).geometry?.dispose();
-    });
-    this.glass.dispose();
+    this.group.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
+    this.shards.dispose();
+    this.glassA.dispose();
+    this.glassB.dispose();
     this.metal.dispose();
-    this.crackMat.dispose();
+    this.shardMat.dispose();
   }
 }

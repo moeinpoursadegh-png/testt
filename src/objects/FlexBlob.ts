@@ -18,7 +18,7 @@ export class FlexBlob {
     uImpact: { value: 0 },
     uVelocity: { value: 0 },
     uDirection: { value: new THREE.Vector3() },
-    uNoiseAmount: { value: 0.03 },
+    uNoiseAmount: { value: 0.012 },
     uNeck: { value: 0 },
     uNeckPos: { value: 0.15 },
     uBend: { value: 0 },

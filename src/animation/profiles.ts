@@ -32,22 +32,22 @@ export interface FlexProfile {
 export const PROFILES: Record<FlexLevel, FlexProfile> = {
   0: {
     level: 0, apertureDelay: 0, squash: 1, stretch: 0, wobble: 0.1, impact: 0.15, recovery: 3,
-    skew: 0, bend: 0, neck: 0, restStretch: 1, restSink: 0, duration: 5.0,
+    skew: 0, bend: 0, neck: 0, restStretch: 1, restSink: 0, duration: 5.4,
   },
   25: {
     level: 25, apertureDelay: 0.2, squash: 0.88, stretch: 0.3, wobble: 0.3, impact: 0.35, recovery: 1.5,
-    skew: 0.12, bend: 0.3, neck: 0, restStretch: 1, restSink: 0, duration: 5.2,
+    skew: 0.12, bend: 0.3, neck: 0, restStretch: 1, restSink: 0, duration: 5.6,
   },
   50: {
     level: 50, apertureDelay: 0.25, squash: 0.68, stretch: 0.55, wobble: 0.6, impact: 0.6, recovery: 1.1,
-    skew: 0.3, bend: 0.6, neck: 0, restStretch: 0.96, restSink: 0.04, duration: 5.3,
+    skew: 0.3, bend: 0.6, neck: 0, restStretch: 0.96, restSink: 0.04, duration: 5.8,
   },
   75: {
     level: 75, apertureDelay: 0.32, squash: 0.56, stretch: 0.85, wobble: 0.9, impact: 0.85, recovery: 0.85,
-    skew: 0.55, bend: 0.9, neck: 0.3, restStretch: 0.85, restSink: 0.12, duration: 5.5,
+    skew: 0.55, bend: 0.9, neck: 0.3, restStretch: 0.85, restSink: 0.12, duration: 6.0,
   },
   100: {
     level: 100, apertureDelay: 0.45, squash: 0.46, stretch: 1.1, wobble: 1.0, impact: 1.1, recovery: 0.6,
-    skew: 0.85, bend: 1.2, neck: 0.96, restStretch: 0.62, restSink: 0.32, duration: 6.6,
+    skew: 0.85, bend: 1.2, neck: 0.96, restStretch: 0.62, restSink: 0.32, duration: 7.0,
   },
 };

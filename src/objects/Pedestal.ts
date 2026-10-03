@@ -10,23 +10,23 @@ export class Pedestal {
   private readonly disposables: { dispose(): void }[] = [];
 
   constructor() {
-    this.stone.map.repeat.set(2, 1);
-    this.stone.bump.repeat.set(2, 1);
+    this.stone.map.repeat.set(3, 3);
+    this.stone.bump.repeat.set(3, 3);
     const stoneMat = new THREE.MeshPhysicalMaterial({
-      color: 0xffffff,
+      color: 0xc9c9c4,
       map: this.stone.map,
       bumpMap: this.stone.bump,
       bumpScale: 1.2,
-      roughness: 0.55,
+      roughness: 0.72,
       metalness: 0,
-      clearcoat: 0.15,
+      clearcoat: 0.05,
       clearcoatRoughness: 0.5,
-      envMapIntensity: 0.8,
+      envMapIntensity: 0.5,
     });
     const trimMat = new THREE.MeshStandardMaterial({
-      color: 0xd0d3d8,
+      color: 0xe0bd72,
       metalness: 1,
-      roughness: 0.34,
+      roughness: 0.3,
       roughnessMap: this.brushed,
       envMapIntensity: 1.15,
     });

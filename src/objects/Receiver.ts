@@ -19,15 +19,14 @@ export class Receiver {
 
   constructor() {
     const top = new THREE.MeshPhysicalMaterial({
-      color: 0xeceae5,
-      roughness: 0.38,
+      color: 0xa9aaa2,
+      roughness: 0.8,
       metalness: 0,
-      clearcoat: 0.5,
-      clearcoatRoughness: 0.25,
-      envMapIntensity: 0.9,
+      clearcoat: 0,
+      envMapIntensity: 0.55,
     });
     const rim = new THREE.MeshStandardMaterial({
-      color: 0xc7cacf,
+      color: 0xe0bd72,
       metalness: 1,
       roughness: 0.3,
       roughnessMap: this.brushed,
@@ -37,7 +36,7 @@ export class Receiver {
     this.mats.push(top, rim, under);
 
     // profile: rounded rim + flat top, thickness ~0.16
-    const th = 0.16;
+    const th = 0.34;
     const rr = 0.05;
     const prof: THREE.Vector2[] = [new THREE.Vector2(0, -th)];
     prof.push(new THREE.Vector2(RECV_R - 0.1, -th));
@@ -65,6 +64,7 @@ export class Receiver {
     this.group.add(this.shadow);
     this.group.position.y = RECV_TOP_Y;
   }
+
 
   setBob(y: number): void {
     this.group.position.y = RECV_TOP_Y + y;

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { PED_TOP_Y } from '../animation/layout';
+import { PED_TOP_Y, RECV_X } from '../animation/layout';
 import { clamp } from '../utils/math';
 
 const BASE_FOV = 24;
@@ -15,12 +15,12 @@ export class CameraController {
 
   resize(w: number, h: number): void {
     this.aspect = w / Math.max(h, 1);
-    let hv = clamp(15.9 - (this.aspect - 0.46) * 1.0, 15, 15.9);
-    hv = Math.max(hv, 6.8 / this.aspect); // keep the apparatus whole on very narrow screens
+    let hv = clamp(14.4 - (this.aspect - 0.46) * 0.8, 13.6, 14.4);
+    hv = Math.max(hv, 7.2 / this.aspect); // keep the apparatus whole on very narrow screens
     this.viewH = hv;
     // pedestal top sits ~20% above the bottom edge
     const bottom = PED_TOP_Y - 0.215 * hv;
-    this.target.set(0, bottom + hv / 2, 0);
+    this.target.set(RECV_X, bottom + hv / 2, 0);
     this.camera.aspect = this.aspect;
     this.apply(0, 0);
   }
