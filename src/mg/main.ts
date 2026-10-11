@@ -606,7 +606,7 @@ async function sHook(ctx: Ctx, t: number): Promise<void> {
     ctx.restore();
     kinetic(ctx, 'AI BUILT', W / 2, 420, { size: 170, weight: 900, align: 'center', tracking: -0.03, color: INK }, seg(t, 0.02, 0.3), 'scale');
     kinetic(ctx, 'THIS', W / 2, 590, { size: 170, weight: 900, align: 'center', tracking: -0.03, stroke: 6, color: '#e5600a' }, seg(t, 0.12, 0.4), 'scale');
-    flash(ctx, cutFlash(0) * 0.9);
+    flash(ctx, cutFlash(0) * 0.0);
   } else if (t < 1.8) {
     const lt = t - 0.9;
     const img = await frame('car', 3.45 + lt * 0.9);
