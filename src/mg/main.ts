@@ -18,7 +18,9 @@ const PACE: [number, number, number][] = [
   [52, 57, 0.58],
   [57, 60, 0.6],
 ];
-export const DURATION = PACE.reduce((a, [s0, s1, v]) => a + (s1 - s0) / v, 0);
+/** cold-open hook (output seconds) played before the edit */
+const HOOK = 3.4;
+export const DURATION = HOOK + PACE.reduce((a, [s0, s1, v]) => a + (s1 - s0) / v, 0);
 /** output time → edit time */
 function toEdit(tn: number): number {
   let acc = 0;
@@ -590,6 +592,81 @@ async function sOutro(ctx: Ctx, t: number): Promise<void> {
   }
 }
 
+
+/** 3.4 s cold open: payoff first, then the question */
+async function sHook(ctx: Ctx, t: number): Promise<void> {
+  const cutFlash = (t0: number) => (t >= t0 ? Math.exp(-(t - t0) * 14) : 0);
+  if (t < 0.9) {
+    const img = await frame('bmw', 2.7 + t * 0.9);
+    const p = seg(t, 0, 0.9);
+    const sh = Math.exp(-t * 10) * 26;
+    ctx.save();
+    ctx.translate((hash(t * 91) - 0.5) * sh, (hash(t * 37) - 0.5) * sh);
+    drawCover(ctx, img, 0, 0, W, H, lerp(1.25, 1.05, eOutExpo(p)), 0.5, 0.5);
+    ctx.restore();
+    kinetic(ctx, 'AI BUILT', W / 2, 420, { size: 170, weight: 900, align: 'center', tracking: -0.03, color: INK }, seg(t, 0.02, 0.3), 'scale');
+    kinetic(ctx, 'THIS', W / 2, 590, { size: 170, weight: 900, align: 'center', tracking: -0.03, stroke: 6, color: '#e5600a' }, seg(t, 0.12, 0.4), 'scale');
+    flash(ctx, cutFlash(0) * 0.9);
+  } else if (t < 1.8) {
+    const lt = t - 0.9;
+    const img = await frame('car', 3.45 + lt * 0.9);
+    const sh = Math.exp(-lt * 10) * 26;
+    ctx.save();
+    ctx.translate((hash(t * 71) - 0.5) * sh, (hash(t * 29) - 0.5) * sh);
+    drawCover(ctx, img, 0, 0, W, H, lerp(1.3, 1.08, eOutExpo(seg(lt, 0, 0.9))), 0.5, 0.5);
+    ctx.restore();
+    kinetic(ctx, '...AND', W / 2, 420, { size: 170, weight: 900, align: 'center', tracking: -0.03, color: INK }, seg(lt, 0.02, 0.3), 'scale');
+    kinetic(ctx, 'THIS', W / 2, 590, { size: 170, weight: 900, align: 'center', tracking: -0.03, stroke: 6, color: '#0096b8' }, seg(lt, 0.12, 0.4), 'scale');
+    flash(ctx, cutFlash(0.9) * 0.9);
+  } else {
+    const lt = t - 1.8;
+    const [car, bmw] = await Promise.all([frame('car', 4.35 + lt * 0.8), frame('bmw', 3.6 + lt * 0.8)]);
+    ctx.fillStyle = C.bg;
+    ctx.fillRect(0, 0, W, H);
+    const z = 1 + 0.05 * lt;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, W, H / 2 - 3);
+    ctx.clip();
+    ctx.translate(W / 2, H / 4);
+    ctx.scale(z, z);
+    ctx.drawImage(car, 0, 470, car.width, car.width * (960 / W), -W / 2, -H / 4, W, 960);
+    ctx.restore();
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, H / 2 + 3, W, H / 2);
+    ctx.clip();
+    ctx.translate(W / 2, (3 * H) / 4);
+    ctx.scale(z, z);
+    const cw = bmw.height * (W / 960);
+    ctx.drawImage(bmw, (bmw.width - cw) / 2, 0, cw, bmw.height, -W / 2, -H / 4, W, 960);
+    ctx.restore();
+    // centre band with the question
+    const band = eOutExpo(seg(lt, 0.0, 0.35));
+    ctx.fillStyle = 'rgba(6,7,10,0.92)';
+    ctx.fillRect(0, H / 2 - 190 * band, W, 380 * band);
+    ctx.fillStyle = C.cyan;
+    ctx.fillRect(0, H / 2 - 190 * band, W * band, 6);
+    ctx.fillStyle = C.orange;
+    ctx.fillRect(W * (1 - band), H / 2 + 190 * band - 6, W * band, 6);
+    {
+      const o = { size: 76, weight: 900, tracking: -0.01 } as const;
+      const a = 'PURE CODE ';
+      const b = 'vs ';
+      const c = 'BLENDER';
+      const wa = measure(ctx, a, o);
+      const wb = measure(ctx, b, { ...o, weight: 500 });
+      const wc = measure(ctx, c, o);
+      const x0 = W / 2 - (wa + wb + wc) / 2;
+      kinetic(ctx, a.trim(), x0, H / 2 - 40, { ...o, color: C.cyan }, seg(lt, 0.15, 0.5));
+      kinetic(ctx, b.trim(), x0 + wa, H / 2 - 40, { ...o, weight: 500, color: C.white }, seg(lt, 0.3, 0.55));
+      kinetic(ctx, c, x0 + wa + wb, H / 2 - 40, { ...o, color: C.orange }, seg(lt, 0.35, 0.7));
+    }
+    kinetic(ctx, 'WHICH ONE WINS?', W / 2, H / 2 + 95, { size: 104, weight: 900, align: 'center', tracking: -0.02 }, seg(lt, 0.55, 0.95), 'scale');
+    flash(ctx, cutFlash(1.8) * 0.9);
+  }
+}
+
 // ------------------------------------------------------------------ edit decision list
 type SceneFn = (ctx: Ctx, t: number) => Promise<void>;
 const scenes: [number, number, SceneFn][] = [
@@ -636,9 +713,38 @@ async function drawInto(ctx: Ctx, i: number, t: number): Promise<void> {
   ctx.restore();
 }
 
-async function render(tOut: number): Promise<void> {
-  nowOut = tOut;
-  const fi = Math.round(tOut * FPS);
+async function render(tAll: number): Promise<void> {
+  nowOut = tAll;
+  const fi = Math.round(tAll * FPS);
+  if (tAll < HOOK) {
+    main.setTransform(1, 0, 0, 1, 0, 0);
+    main.globalAlpha = 1;
+    main.globalCompositeOperation = 'source-over';
+    main.save();
+    await sHook(main, tAll);
+    main.restore();
+    // glitch out of the hook
+    const gk = seg(tAll, HOOK - 0.3, HOOK);
+    if (gk > 0) {
+      const tmp = buf('hook-gl');
+      tmp.x.drawImage(canvas, 0, 0);
+      chroma(main, tmp.c, 30 * gk);
+      glitch(main, tmp.c, gk, fi);
+      flash(main, gk * gk * 0.8, '0,0,0');
+    }
+    for (const [ht, amt] of [[0, 0.9], [0.9, 0.9], [1.8, 0.7]] as const) {
+      if (tAll >= ht && tAll < ht + 0.16) {
+        const k = (1 - (tAll - ht) / 0.16) * amt;
+        const tmp = buf('hook-hit');
+        tmp.x.drawImage(canvas, 0, 0);
+        chroma(main, tmp.c, 26 * k);
+      }
+    }
+    vignette(main, 0.45);
+    postGrain(main, fi, 0.06);
+    return;
+  }
+  const tOut = tAll - HOOK;
   const t = toEdit(tOut);
   const tr = transitions.find(([a, b]) => t >= a && t < b);
   const ctx = main;
@@ -814,7 +920,7 @@ async function render(tOut: number): Promise<void> {
   postGrain(ctx, fi, 0.06);
   // fade in / out
   flash(ctx, 1 - seg(t, 0, 0.25), '0,0,0');
-  flash(ctx, seg(tOut, DURATION - 0.7, DURATION), '0,0,0');
+  flash(ctx, seg(tAll, DURATION - 0.7, DURATION), '0,0,0');
 }
 
 // ------------------------------------------------------------------ boot
