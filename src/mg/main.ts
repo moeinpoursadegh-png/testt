@@ -6,7 +6,30 @@ import {
   vignette,
 } from './fx';
 
-export const DURATION = 60;
+/** Pacing: each stretch of the original 60 s edit plays at its own speed (<1 = slower). */
+const PACE: [number, number, number][] = [
+  [0, 3, 0.6],
+  [3, 6, 0.6],
+  [6, 9, 0.62],
+  [9, 24, 0.85],
+  [24, 27, 0.6],
+  [27, 41, 0.85],
+  [41, 52, 0.9],
+  [52, 57, 0.58],
+  [57, 60, 0.6],
+];
+export const DURATION = PACE.reduce((a, [s0, s1, v]) => a + (s1 - s0) / v, 0);
+/** output time → edit time */
+function toEdit(tn: number): number {
+  let acc = 0;
+  for (const [s0, s1, v] of PACE) {
+    const d = (s1 - s0) / v;
+    if (tn < acc + d) return s0 + (tn - acc) * v;
+    acc += d;
+  }
+  return 60;
+}
+let nowOut = 0;
 const FPS = 30;
 
 // ------------------------------------------------------------------ frame sources
@@ -70,7 +93,7 @@ const splitBmw = curve([
 
 // ------------------------------------------------------------------ shared bits
 const INK = '#0b0d12';
-const beat = (t: number) => Math.exp(-(((t % 0.5) + 0.5) % 0.5) * 9);
+const beat = (_t: number) => Math.exp(-(nowOut % 0.5) * 9);
 const codeLines = codeSrc.split('\n').filter((l) => l.trim().length > 0);
 
 function bgGrid(ctx: Ctx, t: number, color: string, alpha = 0.08): void {
@@ -613,8 +636,10 @@ async function drawInto(ctx: Ctx, i: number, t: number): Promise<void> {
   ctx.restore();
 }
 
-async function render(t: number): Promise<void> {
-  const fi = Math.round(t * FPS);
+async function render(tOut: number): Promise<void> {
+  nowOut = tOut;
+  const fi = Math.round(tOut * FPS);
+  const t = toEdit(tOut);
   const tr = transitions.find(([a, b]) => t >= a && t < b);
   const ctx = main;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -789,7 +814,7 @@ async function render(t: number): Promise<void> {
   postGrain(ctx, fi, 0.06);
   // fade in / out
   flash(ctx, 1 - seg(t, 0, 0.25), '0,0,0');
-  flash(ctx, seg(t, 59.4, 60), '0,0,0');
+  flash(ctx, seg(tOut, DURATION - 0.7, DURATION), '0,0,0');
 }
 
 // ------------------------------------------------------------------ boot
