@@ -14,3 +14,7 @@ Controls: play/pause, replay, auto toggle, FLEX scrubber (click a stop or drag).
 Debug: `?level=50&t=3.2` pins one frame. `prefers-reduced-motion` starts paused with manual level selection.
 
 Structure: `animation/` (deterministic timeline, motion path, profiles), `objects/` (blob, glass rig, receiver, pedestal), `shaders/` (vertex deformation injected into `MeshPhysicalMaterial`), `scene/`, `ui/`.
+
+---
+
+**Portfolio site:** the product-design portfolio lives in [`portfolio/`](portfolio/README.md) as a separate package.

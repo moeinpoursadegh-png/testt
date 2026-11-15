@@ -1,0 +1,15 @@
+# Shared hosting (Apache): clean URLs for the prerendered pages, with the
+# app shell as the fallback for /admin and unknown paths.
+DirectoryIndex index.html
+RewriteEngine On
+
+# Existing files (assets, PDFs) are served as they are.
+RewriteCond %{REQUEST_FILENAME} -f
+RewriteRule ^ - [L]
+
+# /work -> work.html, /work/iranicard -> work/iranicard.html
+RewriteCond %{DOCUMENT_ROOT}/$1.html -f
+RewriteRule ^(.+?)/?$ /$1.html [L]
+
+RewriteRule ^$ /index.html [L]
+RewriteRule ^ /200.html [L]
