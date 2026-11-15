@@ -153,3 +153,4 @@
 .admin-pagehead > div { flex: 1 1 240px; min-width: 0; }
 .admin-content, .editor, .card-body, .le-body { grid-template-columns: minmax(0, 1fr); }
 .list-editor { grid-template-columns: minmax(0, 1fr); }
+.list-editor ol, .proj-list, .simple-list { grid-template-columns: minmax(0, 1fr); }
