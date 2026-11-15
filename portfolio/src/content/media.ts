@@ -65,7 +65,8 @@ async function resolve(src: string): Promise<string> {
 
 /** Resolves a media reference to a usable URL. `status` drives loading and error states. */
 export function useMediaUrl(src: string): { url: string; status: 'empty' | 'loading' | 'ready' | 'error' } {
-  const direct = src && !src.startsWith('idb:') ? src : '';
+  // Site-relative files follow the build's base path.
+  const direct = src && !src.startsWith('idb:') ? (src.startsWith('/') ? import.meta.env.BASE_URL + src.slice(1) : src) : '';
   const [res, setRes] = useState<{ src: string; url: string; error: boolean }>({ src: '', url: '', error: false });
   useEffect(() => {
     if (!src.startsWith('idb:')) return;
